@@ -724,10 +724,27 @@ func (l *logIterator) getValueHash() common.Hash {
 	if l.delimiter || l.finished || l.skipToBoundary {
 		return common.Hash{}
 	}
+
+	// Check if receipts slice is out of bounds
+	if l.txIndex >= len(l.receipts) {
+		return common.Hash{}
+	}
+
+	// Check if logs slice is out of bounds
+	if l.logIndex >= len(l.receipts[l.txIndex].Logs) {
+		return common.Hash{}
+	}
+
 	log := l.receipts[l.txIndex].Logs[l.logIndex]
 	if l.topicIndex == 0 {
 		return addressValue(log.Address)
 	}
+
+	// Check if topics slice is out of bounds
+	if l.topicIndex-1 >= len(log.Topics) {
+		return common.Hash{}
+	}
+
 	return topicValue(log.Topics[l.topicIndex-1])
 }
 
@@ -748,6 +765,7 @@ func (l *logIterator) next() error {
 		l.blockNumber++
 		l.receipts = l.chainView.getReceipts(l.blockNumber)
 		if l.receipts == nil {
+			l.delimiter = true // Set back to true as we couldn't move forward
 			return fmt.Errorf("receipts not found for block %d", l.blockNumber)
 		}
 		l.txIndex, l.logIndex, l.topicIndex, l.blockStart = 0, 0, 0, true
@@ -767,10 +785,28 @@ func (l *logIterator) enforceValidState() {
 	if l.delimiter || l.finished || l.skipToBoundary {
 		return
 	}
+
+	// Make sure we have receipts
+	if len(l.receipts) == 0 {
+		l.delimiter = true
+		return
+	}
+
 	for ; l.txIndex < len(l.receipts); l.txIndex++ {
 		receipt := l.receipts[l.txIndex]
+		// Skip txs with no logs
+		if len(receipt.Logs) == 0 {
+			continue
+		}
+
 		for ; l.logIndex < len(receipt.Logs); l.logIndex++ {
 			log := receipt.Logs[l.logIndex]
+
+			// Skip logs with no topics if we're looking for topics
+			if l.topicIndex > 0 && (len(log.Topics) == 0) {
+				continue
+			}
+
 			if l.topicIndex == 0 && uint64(len(log.Topics)+1) > l.params.valuesPerMap-l.lvIndex%l.params.valuesPerMap {
 				// next log would be split by map boundary; skip to boundary
 				l.skipToBoundary = true
