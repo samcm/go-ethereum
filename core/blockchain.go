@@ -1682,6 +1682,7 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 			bc.logger.OnStateUpdate(trUpdate)
 		}
 		if hasStateSizer {
+			update.BlockHash = block.Hash()
 			bc.stateSizer.Notify(update)
 		}
 		root = r
